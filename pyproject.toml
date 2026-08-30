@@ -1,0 +1,14 @@
+[project]
+name = "mlbricks"
+version = "0.1.0"
+description = "Core ML tooling, including config resolution, registry, and storage."
+readme = "README.md"
+authors = [
+    { name = "Shivam Verma", email = "shivam.vvm.verma@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.9.11,<0.10.0"]
+build-backend = "uv_build"

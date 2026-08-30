@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+*.crt
+*.key
+*.keystore
+*.pem
+.aws
+.env
+.ssh
+secrets
+
+# Project-specific
+**/.worktrees/
