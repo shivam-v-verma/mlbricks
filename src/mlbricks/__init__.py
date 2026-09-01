@@ -17,11 +17,20 @@ from mlbricks.registry import (
     Registry,
     RegistryKeyError,
 )
+from mlbricks.resolve_config import (
+    ConfigInstantiationError,
+    ConfigSerializationError,
+    RegistryParseError,
+    resolve,
+    to_dict,
+)
 from mlbricks.storage import StorageDriver
 from mlbricks.utils import path_slug, uri_slug
 
 __all__ = [
     "ConfigFieldNameClashError",
+    "ConfigInstantiationError",
+    "ConfigSerializationError",
     "ConfigValidationError",
     "Configurable",
     "ConfigurableBuildError",
@@ -32,11 +41,14 @@ __all__ = [
     "MissingConfigError",
     "Registry",
     "RegistryKeyError",
+    "RegistryParseError",
     "StorageCache",
     "StorageDriver",
     "UnexpectedBuildArgError",
     "UnownedConfigError",
     "build_validator",
     "path_slug",
+    "resolve",
+    "to_dict",
     "uri_slug",
 ]
