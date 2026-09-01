@@ -8,7 +8,9 @@ authors = [
     { name = "Shivam Verma", email = "shivam.vvm.verma@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+]
 
 [build-system]
 requires = ["uv_build>=0.9.11,<0.10.0"]
