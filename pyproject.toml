@@ -3,6 +3,7 @@ name = "mlbricks"
 version = "0.1.0"
 description = "Core ML tooling, including config resolution, registry, and storage."
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Shivam Verma", email = "shivam.vvm.verma@gmail.com" }
 ]
