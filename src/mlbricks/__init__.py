@@ -16,6 +16,7 @@ from mlbricks.registry import (
     Registry,
     RegistryKeyError,
 )
+from mlbricks.storage import StorageDriver
 from mlbricks.utils import path_slug, uri_slug
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "MissingConfigError",
     "Registry",
     "RegistryKeyError",
+    "StorageDriver",
     "UnexpectedBuildArgError",
     "UnownedConfigError",
     "build_validator",
