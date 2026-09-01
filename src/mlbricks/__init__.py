@@ -1,3 +1,4 @@
+from mlbricks.cache import StorageCache
 from mlbricks.configurable import (
     ConfigFieldNameClashError,
     Configurable,
@@ -31,6 +32,7 @@ __all__ = [
     "MissingConfigError",
     "Registry",
     "RegistryKeyError",
+    "StorageCache",
     "StorageDriver",
     "UnexpectedBuildArgError",
     "UnownedConfigError",
