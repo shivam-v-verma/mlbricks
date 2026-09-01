@@ -59,6 +59,21 @@ def test_local_put_copies_file(tmp_path: Path) -> None:
     assert (tmp_path / "dst.pt").read_bytes() == b"payload"
 
 
+def test_local_path_no_io(tmp_path: Path) -> None:
+    """local_path is a pure path computation -- no existence check."""
+    storage = LocalStorage(data_dir=tmp_path)
+    assert storage.local_path("missing.pt") == tmp_path / "missing.pt"
+
+
+def test_local_put_noop_when_src_is_dst(tmp_path: Path) -> None:
+    """put is a no-op when src already is the destination file."""
+    storage = LocalStorage(data_dir=tmp_path)
+    dst = storage.local_path("file.pt")
+    dst.write_bytes(b"payload")
+    storage.put(dst, "file.pt")
+    assert dst.read_bytes() == b"payload"
+
+
 def test_local_put_creates_parent_dirs(tmp_path: Path) -> None:
     src = tmp_path / "src.pt"
     src.write_bytes(b"payload")
@@ -120,6 +135,13 @@ def test_s3_staging_path_derivation(tmp_path: Path, s3_bucket: Any) -> None:
     assert result == tmp_path / "s3--test-bucket--prefix--file.pt"
 
 
+def test_s3_local_path_matches_staging_derivation(tmp_path: Path) -> None:
+    """local_path matches get's staging path, without any network call."""
+    storage = S3Storage(data_dir=tmp_path)
+    result = storage.local_path("s3://test-bucket/prefix/file.pt")
+    assert result == tmp_path / "s3--test-bucket--prefix--file.pt"
+
+
 def test_s3_put_uploads_file(tmp_path: Path, s3_bucket: Any) -> None:
     src = tmp_path / "local.pt"
     src.write_bytes(b"payload")
@@ -161,6 +183,23 @@ def test_driver_routes_relative_to_local(tmp_path: Path) -> None:
     (tmp_path / "file.pt").write_bytes(b"data")
     driver = StorageDriver(data_dir=tmp_path)
     assert driver.get("file.pt") == tmp_path / "file.pt"
+
+
+def test_driver_local_path_routes_relative_to_local(tmp_path: Path) -> None:
+    driver = StorageDriver(data_dir=tmp_path)
+    assert driver.local_path("file.pt") == tmp_path / "file.pt"
+
+
+def test_driver_local_path_routes_s3_uri_to_s3(tmp_path: Path) -> None:
+    driver = StorageDriver(data_dir=tmp_path)
+    result = driver.local_path("s3://test-bucket/file.pt")
+    assert result == tmp_path / "s3--test-bucket--file.pt"
+
+
+def test_driver_local_path_raises_on_absolute(tmp_path: Path) -> None:
+    driver = StorageDriver(data_dir=tmp_path)
+    with pytest.raises(ValueError):
+        driver.local_path("/absolute/path/file.pt")
 
 
 def test_driver_routes_s3_uri_to_s3(tmp_path: Path, s3_bucket: Any) -> None:

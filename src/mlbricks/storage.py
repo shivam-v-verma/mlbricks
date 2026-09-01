@@ -32,6 +32,20 @@ class Storage(ABC):
     """Private ABC shared by LocalStorage, S3Storage, and StorageDriver."""
 
     @abstractmethod
+    def local_path(self, uri: str) -> Path:
+        """Return the local path uri resolves or stages to.
+
+        Pure path computation -- no existence check, no I/O, no network
+        call. The file may not exist yet.
+
+        Args:
+            uri: Relative path (resolved against data_dir) or s3:// URI.
+
+        Returns:
+            Local Path uri resolves to (local) or stages to (S3).
+        """
+
+    @abstractmethod
     def get(self, uri: str) -> Path | None:
         """Return a local Path for uri, or None on miss.
 
@@ -72,12 +86,17 @@ class LocalStorage(Storage):
     def __init__(self, data_dir: Path) -> None:
         self._data_dir = data_dir
 
+    def local_path(self, uri: str) -> Path:
+        return self._data_dir / uri
+
     def get(self, uri: str) -> Path | None:
-        path = self._data_dir / uri
+        path = self.local_path(uri)
         return path if path.exists() else None
 
     def put(self, src: Path, dst_uri: str) -> None:
-        dst = self._data_dir / dst_uri
+        dst = self.local_path(dst_uri)
+        if src.resolve() == dst.resolve():
+            return
 
         dst.parent.mkdir(parents=True, exist_ok=True)
 
@@ -129,8 +148,11 @@ class S3Storage(Storage):
 
         return bucket, key
 
+    def local_path(self, uri: str) -> Path:
+        return self._staging_path(self._data_dir, uri)
+
     def get(self, uri: str) -> Path | None:
-        staging = self._staging_path(self._data_dir, uri)
+        staging = self.local_path(uri)
 
         # Return staging if already downloaded
         if staging.exists():
@@ -189,6 +211,14 @@ class StorageDriver(Storage):
 
         self._local = LocalStorage(data_dir)
         self._s3 = S3Storage(data_dir)
+
+    def local_path(self, uri: str) -> Path:
+        _validate_uri(uri)
+        return (
+            self._s3.local_path(uri)
+            if uri.startswith("s3://")
+            else self._local.local_path(uri)
+        )
 
     def get(self, uri: str) -> Path | None:
         _validate_uri(uri)
