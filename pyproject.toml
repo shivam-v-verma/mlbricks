@@ -1,6 +1,6 @@
 [project]
 name = "mlbricks-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Core ML tooling, including config resolution, registry, and storage."
 readme = "README.md"
 license = "MIT"
