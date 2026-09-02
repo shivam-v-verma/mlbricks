@@ -85,13 +85,13 @@ model = cfg["model"].build()
 ## Installation
 
 ```bash
-uv add mlbricks
+uv add mlbricks-core
 ```
 
 or
 
 ```bash
-pip install mlbricks
+pip install mlbricks-core
 ```
 
 ## Scope
