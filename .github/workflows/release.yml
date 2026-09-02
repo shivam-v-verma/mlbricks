@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Check tag matches pyproject version
+        run: |
+          pkg_version=$(uv version --short)
+          tag_version=${GITHUB_REF_NAME#v}
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "Tag v$tag_version does not match pyproject version $pkg_version"
+            exit 1
+          fi
+
+      - run: uv build
+
+      - run: uv publish --trusted-publishing automatic
