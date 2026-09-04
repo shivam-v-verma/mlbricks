@@ -52,7 +52,7 @@ seed: 0
 import torch.nn as nn
 from pydantic import PositiveInt
 import yaml
-from mlbricks import Configurable, Registry, resolve
+from mlbricks import Configurable, Registry, resolve, to_dict
 
 REGISTRY = Registry()
 MODEL_REGISTRY = REGISTRY.subgroup("models")
@@ -67,6 +67,7 @@ class MLP(nn.Module, Configurable):
 
     def __init__(self, cfg: "MLP.Config") -> None:
         super().__init__()
+        self.hparams = to_dict(cfg, registry=REGISTRY)
         self.layers = nn.Sequential(
             nn.Linear(cfg.in_dim, cfg.hidden_dim),
             nn.ReLU(),
@@ -80,6 +81,8 @@ class MLP(nn.Module, Configurable):
 raw = yaml.safe_load(open("config.yaml"))  # or OmegaConf.to_object(OmegaConf.load(...))
 cfg = resolve(raw, registry=REGISTRY)
 model = cfg["model"].build()
+print(model.hparams)
+# {'_registry_': 'models.mlp', 'in_dim': 784, 'hidden_dim': 128, 'out_dim': 10}
 ```
 
 ## Installation
