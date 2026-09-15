@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from mlbricks.configurable import Configurable
+from mlbricks.configurable import Configurable, is_build_time_field
 from mlbricks.registry import Registry
 
 __all__ = [
@@ -241,7 +241,9 @@ def _config_to_dict(
 
     result: dict[str, Any] = {"_registry_": path}
 
-    for name in type(cfg).model_fields:
+    for name, field in type(cfg).model_fields.items():
+        if is_build_time_field(field):
+            continue
         result[name] = to_dict(getattr(cfg, name), registry)
 
     return result

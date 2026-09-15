@@ -6,9 +6,12 @@ from pydantic import BaseModel as PydanticBaseModel
 from pydantic import ConfigDict, Field
 
 from mlbricks import (
+    UNSET,
+    BuildTimeField,
     ConfigInstantiationError,
     ConfigSerializationError,
     Configurable,
+    ConfigValidationError,
     Registry,
     RegistryKeyError,
     RegistryParseError,
@@ -567,6 +570,98 @@ def test_to_dict_round_trip_with_deferred_field(reg: Registry[object]) -> None:
     assert isinstance(restored, WithDeferred.Config)
     assert restored.hidden_dim == 64
     assert restored.input_dim == 32
+
+
+def test_to_dict_skips_build_time_field(reg: Registry[object]) -> None:
+    """BuildTimeField is omitted entirely -- not even a null key."""
+
+    class WithBuildTimeField(Configurable):
+        class Config(Configurable.Config):
+            hidden_dim: int = 64
+            dataloader: BuildTimeField[str] = UNSET
+
+        def __init__(self, cfg: "WithBuildTimeField.Config") -> None:
+            pass
+
+    reg.register("with_build_time_field")(WithBuildTimeField)
+
+    result = to_dict(WithBuildTimeField.Config(), reg)
+    assert result == {
+        "_registry_": "with_build_time_field",
+        "hidden_dim": 64,
+    }
+    assert "dataloader" not in result
+
+
+def test_to_dict_round_trip_omits_build_time_field(reg: Registry[object]) -> None:
+    """Round-tripping through to_dict()/resolve() leaves the field UNSET."""
+
+    class WithBuildTimeField(Configurable):
+        class Config(Configurable.Config):
+            hidden_dim: int = 64
+            dataloader: BuildTimeField[str] = UNSET
+
+        def __init__(self, cfg: "WithBuildTimeField.Config") -> None:
+            pass
+
+    reg.register("with_build_time_field_rt")(WithBuildTimeField)
+
+    original = WithBuildTimeField.Config(hidden_dim=32)
+    restored = resolve(to_dict(original, reg), registry=reg)
+    assert isinstance(restored, WithBuildTimeField.Config)
+    assert restored.hidden_dim == 32
+    with pytest.raises(ConfigValidationError):
+        restored.build()  # dataloader was never supplied
+
+
+def test_to_dict_serializes_build_time_field_with_own_default(
+    reg: Registry[object],
+) -> None:
+    """A BuildTimeField given its own (non-UNSET) default is no longer
+    detected as build-time-only -- it serializes like any ordinary field.
+    This is a documented consequence of is_build_time_field() sharing one
+    detection mechanism between the build() requirement and the to_dict()
+    skip, not a separate opt-out flag."""
+
+    class WithDefaultBuildTimeField(Configurable):
+        class Config(Configurable.Config):
+            logger: BuildTimeField[str] = "default-logger"
+
+        def __init__(self, cfg: "WithDefaultBuildTimeField.Config") -> None:
+            pass
+
+    reg.register("with_default_build_time_field")(WithDefaultBuildTimeField)
+
+    result = to_dict(WithDefaultBuildTimeField.Config(), reg)
+    assert result == {
+        "_registry_": "with_default_build_time_field",
+        "logger": "default-logger",
+    }
+
+
+def test_to_dict_round_trip_with_defaulted_build_time_field(
+    reg: Registry[object],
+) -> None:
+    """A BuildTimeField with its own default round-trips like an ordinary
+    field: resolve() restores it and build() succeeds without needing an
+    override, since it was never UNSET in the first place."""
+
+    class WithDefaultBuildTimeField(Configurable):
+        class Config(Configurable.Config):
+            logger: BuildTimeField[str] = "default-logger"
+
+        def __init__(self, cfg: "WithDefaultBuildTimeField.Config") -> None:
+            self.logger = cfg.logger
+
+    reg.register("with_default_build_time_field_rt")(WithDefaultBuildTimeField)
+
+    original = WithDefaultBuildTimeField.Config()
+    restored = resolve(to_dict(original, reg), registry=reg)
+    assert isinstance(restored, WithDefaultBuildTimeField.Config)
+    assert restored == original
+    assert restored.logger == "default-logger"
+    obj = restored.build()
+    assert obj.logger == "default-logger"
 
 
 def test_to_dict_unsupported_type_raises(reg: Registry[object]) -> None:

@@ -134,6 +134,14 @@ mlp = cfg.build()  # also works -- build() sees the assigned value
 Note: direct assignment does not re-run field validators (`validate_assignment`
 is not enabled). Type enforcement happens at `build()` time via `@build_validator`.
 
+**`BuildTimeField[T]` fields are omitted entirely, not serialized as `null`.**
+Unlike `T | None` deferred fields, a field declared with `BuildTimeField[T]`
+never appears in `to_dict()`'s output -- there is no key to omit-or-include,
+by design, since the field is meant to hold a live object, not something
+intended to survive a round trip. See
+[Build-time-only fields](configurable.md#build-time-only-fields) for the full
+contract.
+
 **Serializable types are `Configurable.Config`, plain `BaseModel` subclasses,
 registered plain dataclasses, `dict`, `list`, and scalars.** Anything outside
 this set -- an unregistered class or dataclass, a live model instance, a

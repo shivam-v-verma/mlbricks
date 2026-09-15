@@ -118,10 +118,64 @@ mlp = cfg.build(input_dim=64)  # input_dim resolved here
 If a required deferred field is not supplied, `build()` raises
 `ConfigValidationError`. Call `.errors()` on it for field-level detail.
 
+### Build-time-only fields
+
+Some fields hold live, non-serializable objects -- a `DataLoader`, an
+`nn.Module`, a logger -- that have no business round-tripping through YAML.
+Declare them with `BuildTimeField[T]` instead of `T | None = None`:
+
+```python
+from mlbricks import UNSET, BuildTimeField, Configurable
+
+
+class Trainer(Configurable):
+    class Config(Configurable.Config["Trainer"]):
+        hidden_dim: int = 256
+        dataloader: BuildTimeField[DataLoader] = UNSET  # explicit default required
+
+    def __init__(self, cfg: "Trainer.Config") -> None:
+        self.loader = cfg.dataloader  # plain DataLoader, no unwrapping
+```
+
+Calling `.build()` without it raises, unless it's supplied:
+
+```python
+cfg = Trainer.Config(hidden_dim=128)
+cfg.build()  # ConfigValidationError -- dataloader required at build()
+```
+
+```python
+trainer = cfg.build(dataloader=my_loader)  # resolved only for this call
+```
+
+Unlike `T | None` deferred fields, `BuildTimeField[T]` requires no manual
+`@build_validator` -- `build()` raises automatically if it's still unresolved.
+It's also invisible to `to_dict()`: the field is omitted from the serialized
+dict entirely, not even as `null`. See
+[Serializing configs with `to_dict()`](config-resolution.md#serializing-configs-with-to_dict)
+for the serialization contract.
+
+A `BuildTimeField[T]` can opt out of the "required at build" check by giving
+it its own default, exactly like any other field:
+
+```python
+logger: BuildTimeField[Logger] = default_logger
+```
+
+Detection of "is this a `BuildTimeField`" is the class-declared default being
+`UNSET` -- the same mechanism drives both the required-at-build check and the
+`to_dict()` skip. Giving a field its own default opts it out of *both*: it's
+no longer required at build, but it's also no longer omitted from
+`to_dict()` -- it serializes like any ordinary field. Only give a
+`BuildTimeField[T]` its own default when that value is itself serializable,
+or when you never call `to_dict()` on that `Config`.
+
 ### Field constraints
 
 Every `Config` is a Pydantic model, so type-level constraints are free.
-Prefer them over manual validators. Priority order:
+Prefer them over manual validators. For build-time-only, non-serializable
+values, see [Build-time-only fields](#build-time-only-fields) above instead
+-- it isn't a constraint mechanism. Priority order:
 
 1. **Declarative annotation** -- express bounds and length checks directly
    in the type:

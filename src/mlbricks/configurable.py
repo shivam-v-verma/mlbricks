@@ -1,11 +1,14 @@
 import inspect
 import types
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 import pydantic
 from pydantic import BaseModel, ConfigDict, ValidationInfo, model_validator
+from pydantic.fields import FieldInfo
 
 __all__ = [
+    "UNSET",
+    "BuildTimeField",
     "ConfigFieldNameClashError",
     "ConfigValidationError",
     "Configurable",
@@ -86,6 +89,55 @@ def build_validator(func: types.FunctionType) -> Any:
     return model_validator(mode="after")(wrapper)
 
 
+class _Unset:
+    """Sentinel for a BuildTimeField that has not been resolved yet.
+
+    Distinct from None so a BuildTimeField[T] can hold a T that is itself
+    None. Never constructed outside this module.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+UNSET = _Unset()
+
+
+# Config field annotation for build-time-only, non-serializable values.
+#
+# Never required at Config construction, never emitted by
+# resolve_config.to_dict(), and required at build() time unless the field is
+# given its own default (same precedence as any pydantic field). Declare the
+# "= UNSET" default explicitly -- it is not implicit.
+#
+# Example:
+#   class Trainer(Configurable):
+#       class Config(Configurable.Config["Trainer"]):
+#           dataloader: BuildTimeField[DataLoader] = UNSET
+#
+#       def __init__(self, cfg: "Trainer.Config") -> None:
+#           self.loader = cfg.dataloader  # plain DataLoader, no unwrap
+#
+#   cfg = Trainer.Config()
+#   trainer = cfg.build(dataloader=my_loader)
+type BuildTimeField[T] = T | _Unset
+
+
+def is_build_time_field(field: FieldInfo) -> bool:
+    """Return True if field's class-declared default is the BuildTimeField sentinel.
+
+    Checks the declared default (``FieldInfo.default``), not the current
+    instance value, so this stays correct after build() resolves a real value
+    on a validated Config instance.
+
+    Used by build()'s automatic unresolved-field check and by
+    resolve_config.to_dict() to skip these fields during serialization.
+    """
+    return field.default is UNSET
+
+
 class Configurable:
     """Mixin for classes that are constructed from a nested Config pydantic model.
 
@@ -158,6 +210,17 @@ class Configurable:
                 super().__init__(**data)
             except pydantic.ValidationError as exc:
                 raise ConfigValidationError(exc) from exc
+
+        @build_validator
+        def _check_build_time_fields(self) -> Self:
+            unresolved = [
+                name
+                for name, field in type(self).model_fields.items()
+                if is_build_time_field(field) and getattr(self, name) is UNSET
+            ]
+            if unresolved:
+                raise ValueError(f"BuildTimeField(s) required at build(): {unresolved}")
+            return self
 
         def build(self, **kwargs: Any) -> T:
             """Construct the owning class from this config.
