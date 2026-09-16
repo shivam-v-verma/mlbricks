@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from mlbricks.configurable import Configurable, is_build_time_field
+from mlbricks.magic_registry import magic_wrap
 from mlbricks.registry import Registry
 
 __all__ = [
@@ -61,8 +62,11 @@ def parse(
         A top-level _registry_ dict is itself replaced by a ParsedNode.
 
     Raises:
-        RegistryParseError: If a _registry_ value is not a string.
+        RegistryParseError: If a _registry_ value is not a string, or a node
+            has both _registry_ and _magic_registry_ keys.
         RegistryKeyError: If a _registry_ key is not found in the registry.
+        MagicRegistryError: If a _magic_registry_ path can't be imported or a
+            field doesn't match the target's __init__.
 
     Example:
         >>> result = parse({"_registry_": "models.mlp", "dim": 64}, registry=reg)
@@ -80,10 +84,24 @@ def _parse_dict(
     node: dict[str, Any],
     registry: Registry[Any],
 ) -> dict[str, Any] | ParsedNode:
-    # plain dict -- recurse into values without creating a ParsedNode
-    if "_registry_" not in node:
-        return {k: parse(v, registry) for k, v in node.items()}
+    match "_registry_" in node, "_magic_registry_" in node:
+        case True, True:
+            raise RegistryParseError(
+                "node cannot have both '_registry_' and '_magic_registry_' keys"
+            )
+        case False, False:
+            # plain dict -- recurse into values without creating a ParsedNode
+            return {k: parse(v, registry) for k, v in node.items()}
+        case False, True:
+            return _parse_magic_dict(node, registry)
+        case True, False:
+            return _parse_registry_dict(node, registry)
 
+
+def _parse_registry_dict(
+    node: dict[str, Any],
+    registry: Registry[Any],
+) -> ParsedNode:
     key = node["_registry_"]
     if not isinstance(key, str):
         raise RegistryParseError(
@@ -97,6 +115,24 @@ def _parse_dict(
     kwargs = {k: parse(v, registry) for k, v in node.items() if k != "_registry_"}
 
     return ParsedNode(key=key, cls=cls, kwargs=kwargs)
+
+
+def _parse_magic_dict(
+    node: dict[str, Any],
+    registry: Registry[Any],
+) -> ParsedNode:
+    path = node["_magic_registry_"]
+    if not isinstance(path, str):
+        raise RegistryParseError(
+            f"_magic_registry_ value must be a string, got {type(path).__name__!r}"
+        )
+
+    kwargs = {k: parse(v, registry) for k, v in node.items() if k != "_magic_registry_"}
+
+    # MagicRegistryError propagates as-is
+    cls = magic_wrap(path, kwargs.keys())
+
+    return ParsedNode(key=path, cls=cls, kwargs=kwargs)
 
 
 def instantiate(parsed: Any) -> Any:
@@ -232,6 +268,10 @@ def _config_to_dict(
             "Config has no owner -- define it inside a Configurable subclass"
         )
 
+    magic_path = getattr(owner, "_magic_path_", None)
+    if magic_path is not None:
+        return _dump_fields(cfg, registry, key="_magic_registry_", path=magic_path)
+
     path = registry.path_of(owner)
     if path is None:
         raise ConfigSerializationError(
@@ -239,13 +279,17 @@ def _config_to_dict(
             " -- cannot serialize"
         )
 
-    result: dict[str, Any] = {"_registry_": path}
+    return _dump_fields(cfg, registry, key="_registry_", path=path)
 
+
+def _dump_fields(
+    cfg: Configurable.Config, registry: Registry[Any], *, key: str, path: str
+) -> dict[str, Any]:
+    result: dict[str, Any] = {key: path}
     for name, field in type(cfg).model_fields.items():
         if is_build_time_field(field):
             continue
         result[name] = to_dict(getattr(cfg, name), registry)
-
     return result
 
 

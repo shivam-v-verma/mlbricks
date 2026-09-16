@@ -17,6 +17,7 @@ from mlbricks import (
     RegistryParseError,
     resolve,
 )
+from mlbricks.magic_registry import magic_wrap
 from mlbricks.resolve_config import ParsedNode, instantiate, parse, to_dict
 
 # ---------------------------------------------------------------------------
@@ -75,6 +76,14 @@ class PlainDC:
     label: str = "default"
 
 
+class FakeExternal:
+    """Stand-in for an unregistered third-party class, for _magic_registry_ tests."""
+
+    def __init__(self, threshold: float = 0.5, label: str = "x") -> None:
+        self.threshold = threshold
+        self.label = label
+
+
 @pytest.fixture
 def reg() -> Registry[object]:
     """Fresh isolated registry per test -- never touches the global REGISTRY."""
@@ -108,6 +117,37 @@ def test_parse_preserves_registry_key_string(reg: Registry[object]) -> None:
     cfg = {"model": {"_registry_": "models.cfg", "hidden_dim": 64}}
     result = parse(cfg, registry=reg)
     assert result["model"].key == "models.cfg"
+
+
+# ---------------------------------------------------------------------------
+# parse: _magic_registry_ node
+# ---------------------------------------------------------------------------
+
+
+def test_parse_magic_registry_node_returns_parsed_node(reg: Registry[object]) -> None:
+    cfg = {"_magic_registry_": f"{__name__}.FakeExternal", "threshold": 0.9}
+    result = parse(cfg, registry=reg)
+    assert isinstance(result, ParsedNode)
+    assert result.key == f"{__name__}.FakeExternal"
+    assert result.kwargs == {"threshold": 0.9}
+
+
+def test_resolve_magic_registry_node_end_to_end(reg: Registry[object]) -> None:
+    cfg = {"model": {"_magic_registry_": f"{__name__}.FakeExternal", "threshold": 0.9}}
+    result = resolve(cfg, registry=reg)
+    built = result["model"].build(label="custom")
+    assert isinstance(built, FakeExternal)
+    assert built.threshold == 0.9
+    assert built.label == "custom"
+
+
+def test_parse_node_with_both_registry_keys_raises(reg: Registry[object]) -> None:
+    cfg = {
+        "_registry_": "models.plain",
+        "_magic_registry_": f"{__name__}.FakeExternal",
+    }
+    with pytest.raises(RegistryParseError):
+        parse(cfg, registry=reg)
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +544,31 @@ def test_to_dict_round_trip_nested(reg: Registry[object]) -> None:
     assert isinstance(restored.inner, Cfg.Config)
     assert restored.inner.hidden_dim == 32
     assert restored.scale == 3.0
+
+
+# ---------------------------------------------------------------------------
+# to_dict: _magic_registry_ node
+# ---------------------------------------------------------------------------
+
+
+def test_to_dict_magic_registry_node(reg: Registry[object]) -> None:
+    cls = magic_wrap(f"{__name__}.FakeExternal", ["threshold"])
+    cfg = cls.Config(threshold=0.7)
+    result = to_dict(cfg, reg)
+    assert result == {
+        "_magic_registry_": f"{__name__}.FakeExternal",
+        "threshold": 0.7,
+    }
+
+
+def test_to_dict_magic_registry_round_trip(reg: Registry[object]) -> None:
+    cls = magic_wrap(f"{__name__}.FakeExternal", ["threshold"])
+    original = cls.Config(threshold=0.3)
+    restored = resolve(to_dict(original, reg), registry=reg)
+    built = restored.build(label="rt")
+    assert isinstance(built, FakeExternal)
+    assert built.threshold == 0.3
+    assert built.label == "rt"
 
 
 # ---------------------------------------------------------------------------
