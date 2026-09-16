@@ -118,7 +118,9 @@ keep registered classes to `Configurable` subclasses and plain dataclasses:
 those are the only types `to_dict()` knows how to round-trip, and it raises
 `ConfigSerializationError` for anything else. `mlbricks` does not enforce this
 for you; a project-level test that walks its own registry tree is one way to
-catch violations early.
+catch violations early. For external classes you don't own, see
+[External classes](#external-classes) below instead of registering a
+hand-rolled subclass.
 
 ### Import order
 
@@ -196,6 +198,70 @@ visible in one place.
 `RegistryKeyError` is a subclass of `KeyError`. Its `__str__` returns the
 message directly (without `KeyError`'s extra quoting), so it prints cleanly in
 tracebacks.
+
+---
+
+## External classes
+
+For a class you don't own -- `torch.optim.Adam`, `sklearn`'s estimators,
+anything from a third-party library -- hand-writing a `Configurable` subclass
+just to wire a handful of constructor kwargs is unnecessary boilerplate. Use
+`_magic_registry_` instead of `_registry_`:
+
+```yaml
+optimizer:
+  _magic_registry_: torch.optim.Adam
+  lr: 0.001
+  weight_decay: 0.0001
+```
+
+`_magic_registry_` takes a dotted **import path**, not a curated registry
+name -- no `.register()` call needed. `resolve()` imports the class, builds a
+`Configurable` wrapper on the fly with a `Config` field for each YAML key
+(typed from `Adam.__init__`'s own annotations, so `lr: "oops"` fails
+validation before `Adam.__init__` ever runs), and subclasses `Adam` directly
+-- the built object *is* a real `torch.optim.Adam`, not a wrapper around one.
+
+Anything the class needs that isn't in the YAML -- `params`, most commonly,
+since parameters are a live object, not config -- is supplied at `.build()`
+time, exactly like any other `Configurable`'s owner kwargs:
+
+```python
+from mlbricks import resolve
+
+cfg = resolve(
+    {"optimizer": {"_magic_registry_": "torch.optim.Adam", "lr": 1e-3}},
+    registry=REGISTRY,
+)
+optimizer = cfg["optimizer"].build(params=model.parameters())
+```
+
+It round-trips through `to_dict()` the same way `_registry_` entries do:
+
+```python
+to_dict(cfg["optimizer"], REGISTRY)
+# {"_magic_registry_": "torch.optim.Adam", "lr": 0.001}
+```
+
+See [Config Resolution](config-resolution.md#magic-registry-entries) for the
+full contract and error types.
+
+### When `_magic_registry_` isn't enough
+
+Fall back to a hand-written `Configurable` subclass (see the
+[full example](#full-example) above) when:
+
+- The external class's `__init__` isn't introspectable (e.g. some
+  C-extension types) *and* you need real type validation on the fields --
+  `_magic_registry_` still works here, but silently drops to unvalidated
+  `Any` fields.
+- You need cross-field validation (`@model_validator`), deferred fields
+  (`T | None`), or `BuildTimeField[T]` semantics -- `_magic_registry_`
+  Configs are flat, one field per YAML key, no validators.
+- The external class doesn't compose cleanly with multiple inheritance
+  (unusual `__new__`/metaclass behavior) -- `_magic_registry_` subclasses
+  `(target_cls, Configurable)` directly, which assumes a plain-Python
+  `__init__` path like `nn.Module` subclasses have.
 
 ---
 

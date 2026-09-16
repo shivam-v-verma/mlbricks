@@ -60,9 +60,11 @@ Three things to note:
 | Exception | When it fires |
 |---|---|
 | `RegistryKeyError` | A `_registry_` key is not found in the registry. |
-| `RegistryParseError` | A `_registry_` value is not a string. |
+| `RegistryParseError` | A `_registry_`/`_magic_registry_` value is not a string, or a node has both keys. |
 | `ConfigInstantiationError` | A class constructor raises during resolution. Wraps the original exception via `__cause__`. |
 | `ConfigSerializationError` | `to_dict()` encounters an unregistered owner or an unsupported type. |
+| `MagicRegistryImportError` | A `_magic_registry_` path can't be imported, or doesn't resolve to a class. |
+| `MagicRegistryUnknownFieldError` | A `_magic_registry_` field has no matching `__init__` parameter on the target class. |
 
 `RegistryKeyError` is most commonly caused by a missing import of the module
 that registers the class, before calling `resolve()`.
@@ -151,3 +153,39 @@ Plain `BaseModel` subclasses (those that do not inherit from `Configurable.Confi
 are serialized by iterating their declared fields and recursing into each value.
 This covers inline schema types like entry models that appear as list elements
 in `Configurable.Config` fields.
+
+---
+
+## Magic registry entries
+
+`_magic_registry_` is `_registry_`'s counterpart for classes you haven't
+registered -- see [External classes](registry.md#external-classes) for the
+motivating example. The two keys are mutually exclusive on one node;
+supplying both raises `RegistryParseError`.
+
+Differences from `_registry_` nodes:
+
+- The value is a dotted **import path** (`"torch.optim.Adam"`), not a name
+  registered via `Registry.register()`. No import-order requirement like
+  `_registry_` has (see [Import order](registry.md#import-order)) -- the
+  class is imported on demand by `resolve()` itself.
+- The Config is synthesized on the fly with exactly the sibling keys present
+  in the node as fields -- there's no fixed schema to consult ahead of time.
+  A key with no matching `__init__` parameter (and no `**kwargs` catch-all on
+  the target) raises `MagicRegistryUnknownFieldError` immediately.
+- Fields are typed from the target's own `__init__` annotations when
+  resolvable, so a type mismatch (`lr: "oops"` against `lr: float`) raises
+  `ConfigValidationError` at `Config()` construction -- before the target's
+  constructor ever runs. (Through `resolve()`, this surfaces as
+  `ConfigInstantiationError` with the `ConfigValidationError` as `__cause__`,
+  same as any other instantiation failure -- see the error table above.)
+  Unannotated or unintrospectable parameters fall back to unvalidated `Any`.
+- Round-trips as `_magic_registry_` in `to_dict()`'s output, not `_registry_`
+  -- no `Registry.path_of()` lookup involved, so it works even against a
+  `Registry` instance that never saw the class.
+
+**Trust assumption:** unlike `_registry_`, which only reaches classes an
+owning project explicitly `.register()`s, `_magic_registry_` will import and
+instantiate *any* dotted path reachable in the running interpreter. Treat
+config trees the same way you'd treat code -- developer-authored and
+reviewed, not sourced from untrusted input.

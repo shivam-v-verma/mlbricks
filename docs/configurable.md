@@ -122,7 +122,10 @@ If a required deferred field is not supplied, `build()` raises
 
 Some fields hold live, non-serializable objects -- a `DataLoader`, an
 `nn.Module`, a logger -- that have no business round-tripping through YAML.
-Declare them with `BuildTimeField[T]` instead of `T | None = None`:
+(If you're wrapping an *external* class you don't own just to get here, check
+[External classes](registry.md#external-classes) first -- `_magic_registry_`
+covers the common case without a hand-written subclass.) Declare them with
+`BuildTimeField[T]` instead of `T | None = None`:
 
 ```python
 from mlbricks import UNSET, BuildTimeField, Configurable
