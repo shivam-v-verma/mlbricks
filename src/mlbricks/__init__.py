@@ -21,6 +21,11 @@ from mlbricks.featurization import (
     TransformHooks,
     TransformPipeline,
 )
+from mlbricks.magic_registry import (
+    MagicRegistryError,
+    MagicRegistryImportError,
+    MagicRegistryUnknownFieldError,
+)
 from mlbricks.registry import (
     DuplicateRegistrationError,
     InvalidRegistryNameError,
@@ -51,6 +56,9 @@ __all__ = [
     "Context",
     "DuplicateRegistrationError",
     "InvalidRegistryNameError",
+    "MagicRegistryError",
+    "MagicRegistryImportError",
+    "MagicRegistryUnknownFieldError",
     "MissingCfgParameterError",
     "MissingConfigError",
     "NamedTransformStep",
