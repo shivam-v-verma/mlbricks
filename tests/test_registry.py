@@ -148,6 +148,32 @@ def test_register_empty_name_raises(reg: Registry[Any]) -> None:
             pass
 
 
+def test_register_same_class_twice_raises(reg: Registry[Any]) -> None:
+    class Foo:
+        pass
+
+    reg.register("foo")(Foo)
+
+    with pytest.raises(DuplicateRegistrationError):
+        reg.subgroup("other").register("foo2")(Foo)
+
+
+def test_register_same_class_in_independent_registries_does_not_raise() -> None:
+    # Two unrelated Registry() trees registering the same class object under
+    # the same path -- e.g. a fresh registry built per test -- must not
+    # collide. Only double-registration *within one tree* is an error.
+    class Foo:
+        pass
+
+    first: Registry[Any] = Registry()
+    first.register("foo")(Foo)
+
+    second: Registry[Any] = Registry()
+    second.register("foo")(Foo)  # must not raise
+
+    assert second.path_of(Foo) == "foo"
+
+
 # ---------------------------------------------------------------------------
 # get error cases
 # ---------------------------------------------------------------------------
@@ -258,6 +284,20 @@ def test_path_of_multi_level(reg: Registry[Any]) -> None:
     assert reg.path_of(GAT) == "models.gnn.gat"
 
 
+def test_path_of_uses_prefix_from_subgroup_chain(reg: Registry[Any]) -> None:
+    # A registration made after several subgroup() calls must resolve to the
+    # full accumulated dotted path, not just the last segment.
+    a = reg.subgroup("a")
+    b = a.subgroup("b")
+    c = b.subgroup("c")
+
+    @c.register("leaf")
+    class Leaf:
+        pass
+
+    assert reg.path_of(Leaf) == "a.b.c.leaf"
+
+
 def test_path_of_unregistered_returns_none(reg: Registry[Any]) -> None:
     class Unknown:
         pass
@@ -274,3 +314,15 @@ def test_path_of_subgroup_not_a_leaf(reg: Registry[Any]) -> None:
 
     # "models" maps to a Registry, not this class
     assert reg.path_of(Models) is None
+
+
+def test_path_of_scoped_to_this_registry(reg: Registry[Any]) -> None:
+    # A class registered in one registry must not resolve via a different,
+    # unrelated registry -- path_of() must stay scoped to `self`.
+    other_reg: Registry[Any] = Registry()
+
+    @reg.register("foo")
+    class Foo:
+        pass
+
+    assert other_reg.path_of(Foo) is None

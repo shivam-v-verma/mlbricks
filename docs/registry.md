@@ -190,7 +190,7 @@ visible in one place.
 | Exception | When it fires |
 |---|---|
 | `InvalidRegistryNameError` | A name passed to `.register()` or `.subgroup()` is empty or contains a period. |
-| `DuplicateRegistrationError` | A name is already registered at that registry level -- whether as a leaf or a subgroup. |
+| `DuplicateRegistrationError` | A name is already registered at that registry level -- whether as a leaf or a subgroup -- or the same class is registered under a second path. |
 | `RegistryKeyError` | A dotted path cannot be resolved: a segment is missing, an intermediate segment is a leaf class, or the final segment is a subgroup rather than a leaf. |
 
 `RegistryKeyError` is a subclass of `KeyError`. Its `__str__` returns the

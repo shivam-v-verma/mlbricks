@@ -39,8 +39,12 @@ class Registry[T]:
         True
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, prefix: str = "", root: "Registry[Any] | None" = None
+    ) -> None:
         self._entries: dict[str, type[Any] | Registry[Any]] = {}
+        self._prefix = prefix
+        self._root = root if root is not None else self
 
     def subgroup[S](self, name: str) -> "Registry[S]":
         """Create a named child registry and store it under ``name``.
@@ -61,7 +65,8 @@ class Registry[T]:
         if name in self._entries:
             raise DuplicateRegistrationError(f"'{name}' is already registered")
 
-        child: Registry[S] = Registry()
+        full_prefix = f"{self._prefix}.{name}" if self._prefix else name
+        child: Registry[S] = Registry(prefix=full_prefix, root=self._root)
         self._entries[name] = child
 
         return child
@@ -73,20 +78,44 @@ class Registry[T]:
             name: Single-segment name. Must not contain a period.
 
         Returns:
-            A decorator that stores the class and returns it unchanged.
+            A decorator that stamps the class's dotted registry path onto
+            ``cls._registry_path_``, stores it, and returns it unchanged.
 
         Raises:
             InvalidRegistryNameError: If ``name`` contains a period.
             DuplicateRegistrationError: If ``name`` is already registered in
                 this registry (raised at factory-call time, before the
-                decorated class is defined).
+                decorated class is defined), or if ``cls`` is already
+                reachable at another path within this registry's tree
+                (raised at decoration time). A stamp left over from an
+                unrelated, independently-constructed ``Registry()`` --
+                e.g. a fresh registry built per test -- does not count,
+                since it no longer resolves to anything.
         """
         _validate_name(name)
 
         if name in self._entries:
             raise DuplicateRegistrationError(f"'{name}' is already registered")
 
+        full_path = f"{self._prefix}.{name}" if self._prefix else name
+
         def decorator(cls: type[S]) -> type[S]:
+            existing_path = getattr(cls, "_registry_path_", None)
+            if existing_path is not None:
+                # existing_path may belong to an unrelated Registry() tree
+                # (e.g. a fresh registry built per test) that simply hasn't
+                # reached this path yet -- that's not a real duplicate.
+                try:
+                    still_live = self._root.get(existing_path) is cls
+                except RegistryKeyError:
+                    still_live = False
+                if still_live:
+                    raise DuplicateRegistrationError(
+                        f"{cls.__name__} is already registered at"
+                        f" '{existing_path}' -- cannot also register it at"
+                        f" '{full_path}'"
+                    )
+            cast(Any, cls)._registry_path_ = full_path
             self._entries[name] = cls
             return cls
 
@@ -183,8 +212,9 @@ class Registry[T]:
     def path_of(self, cls: type) -> str | None:
         """Return the dotted registry path for ``cls``, or ``None`` if not registered.
 
-        Performs a depth-first tree-walk. Useful for serializing a registered
-        class back to its declarative ``_registry_`` key.
+        Reads the path stamped on ``cls`` by ``register()`` and confirms it
+        resolves back to ``cls`` within this registry -- O(path depth), not
+        O(registry size).
 
         Args:
             cls: The class to look up.
@@ -201,32 +231,14 @@ class Registry[T]:
             >>> reg.path_of(MLP)
             'models.mlp'
         """
-        return self._find_path(cls, prefix="")
+        path = getattr(cls, "_registry_path_", None)
+        if path is None:
+            return None
 
-    def _find_path(self, cls: type, prefix: str) -> str | None:
-        """Recursively search for a class in the registry tree.
-
-        Args:
-            cls: The class to look up.
-            prefix: Dot-separated path prefix accumulated by parent calls.
-
-        Returns:
-            Dotted path string if found, or ``None`` if not found.
-        """
-        for name, entry in self._entries.items():
-            full_name = f"{prefix}.{name}" if prefix else name
-
-            if entry is cls:
-                # found answer
-                return full_name
-
-            if isinstance(entry, Registry):
-                result = entry._find_path(cls, full_name)
-                if result is not None:
-                    # pass solution up
-                    return result
-
-        return None
+        try:
+            return path if self.get(path) is cls else None
+        except RegistryKeyError:
+            return None
 
 
 def _validate_name(name: str) -> None:
